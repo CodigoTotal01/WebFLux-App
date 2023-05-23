@@ -23,13 +23,29 @@
 <!--        Mapperar con asterisco-->
         <div><label for="nombre">Nombre</label>
             <div><input type="text" th:field="*{nombre}"></div>
+<!--            Para mostrar los errores de los campos del obj -->
+            <small th:if="${#fields.hasErrors('nombre')}" th:errors="*{nombre}"></small>
         </div>
         <div><label for="precio">Precio</label>
             <div><input type="text"  th:field="*{precio}"></div>
+            <small th:if="${#fields.hasErrors('precio')}" th:errors="*{precio}"></small>
         </div>
         <div><label for="createAt">Fecha</label>
 <!--            anio/mes/dia no lo hacepta javita-->
             <div><input type="date"  th:field="*{createAt}"></div>
+            <small th:if="${#fields.hasErrors('createAt')}" th:errors="*{createAt}"></small>
+        </div>
+
+        <div><label for="categoria.id">Categoria</label>
+            <!--            anio/mes/dia no lo hacepta javita-->
+            <div>
+                <select th:field="*{categoria.id}">
+                    <option value="">-- seleccionar --</option>
+                    <option th:each="categoria: ${categorias}"
+                            th:value="${categoria.id}" th:text="${categoria.nombre}"></option>
+                </select>
+                <small th:if="${#fields.hasErrors('categoria.id')}" th:errors="*{categoria.id}"></small>
+            </div>
         </div>
         <div>
             <div><input type="submit" th:value="${boton}"></div>

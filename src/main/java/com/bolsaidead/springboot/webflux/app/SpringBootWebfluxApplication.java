@@ -1,7 +1,11 @@
 package com.bolsaidead.springboot.webflux.app;
 
+import com.bolsaidead.springboot.webflux.app.models.dao.CategoriaDao;
 import com.bolsaidead.springboot.webflux.app.models.dao.ProductoDao;
+import com.bolsaidead.springboot.webflux.app.models.documents.Categoria;
 import com.bolsaidead.springboot.webflux.app.models.documents.Producto;
+import com.bolsaidead.springboot.webflux.app.models.services.ProductoService;
+import com.bolsaidead.springboot.webflux.app.models.services.ProductoServiceImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,12 +17,14 @@ import reactor.core.publisher.Flux;
 
 import javax.xml.crypto.Data;
 import java.util.Date;
+import java.util.concurrent.CancellationException;
 
 @SpringBootApplication
 public class SpringBootWebfluxApplication implements CommandLineRunner {
 
     @Autowired
-    private ProductoDao dao;
+    private ProductoService service;
+
 
     @Autowired
     private ReactiveMongoTemplate mongoTemplate;
@@ -33,26 +39,44 @@ public class SpringBootWebfluxApplication implements CommandLineRunner {
     public void run(String... args) throws Exception {
         // Eliminar la tabla - productos
         mongoTemplate.dropCollection("productos").subscribe();
+        mongoTemplate.dropCollection("categorias").subscribe();
 
-        Flux.just(new Producto("TV Panasonic Pantalla LCD", 456.89),
-                new Producto("Sony camara HD digital", 786.23 ),
-                new Producto("Play Station 3",700.00 ),
-                new Producto("Laptop lenovo decima generacion", 5000.00),
-                new Producto("Disco duro externo de 5T", 689.97),
-                new Producto("Teclado mecanico redragon", 350.87 ),
-                new Producto("Galaxy fold 3v",3500.99 )
-                )
-                //Asi retornara nadamas (save) un flujo de mono - osea otro flujo
-                .flatMap(producto -> {
-                    producto.setCreateAt(new Date());
-                    return dao.save(producto);
+
+        //Categorias
+        Categoria electronico = new Categoria("Electronico");
+        Categoria deporte = new Categoria("Deporte");
+        Categoria computacion = new Categoria("Computacion");
+        Categoria muebles = new Categoria("Muebles");
+
+
+
+        Flux.just(electronico, deporte, computacion, muebles)
+                //            service.saveCategoria(categoria);
+                .flatMap(service::saveCategoria)
+                .doOnNext(categoria -> {
+                    log.info("Categoria Creada: " +categoria.getNombre() + ", Id: ", categoria.getId());
                 })
-                // no tenemos el objeto en si, si no el mono, en estos casos el flatmap obtiene el obserbable y lo aplana a nuestro objeto deseado
+                //! Ejecutar otro flujo de datos despues
+                .thenMany(
+
+                        Flux.just(new Producto("TV Panasonic Pantalla LCD", 456.89, electronico),
+                                        new Producto("Sony camara HD digital", 786.23, electronico),
+                                        new Producto("Play Station 3", 700.00, electronico),
+                                        new Producto("Laptop lenovo decima generacion", 5000.00, computacion),
+                                        new Producto("Disco duro externo de 5T", 689.97, computacion),
+                                        new Producto("Teclado mecanico redragon", 350.87, computacion),
+                                        new Producto("Galaxy fold 3v", 3500.99, electronico)
+                                )
+                                //Asi retornara nadamas (save) un flujo de mono - osea otro flujo
+                                .flatMap(producto -> {
+                                    producto.setCreateAt(new Date());
+                                    return service.save(producto);
+                                })
+                        // no tenemos el objeto en si, si no el mono, en estos casos el flatmap obtiene el obserbable y lo aplana a nuestro objeto deseado
+
+                )
                 .subscribe(producto -> log.info("Insert: " + producto.getId() + " " + producto.getNombre()));
     }
-
-
-
 
 
 }

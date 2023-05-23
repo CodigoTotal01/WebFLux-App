@@ -13,7 +13,7 @@
 <body>
 
 <div th:if="${param.error} != null" th:text="${param.error}"></div>
-<div th:if="${param.succes} != null" th:text="${param.succes}"></div>
+<div th:if="${param.success} != null" th:text="${param.succes}"></div>
 
     <h1 th:text="${titulo}"></h1>
 
@@ -24,18 +24,28 @@
             <th>Id</th>
             <th>Nombre</th>
             <th>Precio</th>
+            <th>Categoria</th>
+
             <th>Fecha</th>
         </tr>
         </thead>
         <tbody>
+
+        <h1></h1>
         <tr th:each="producto: ${productos}">
             <td th:text="${producto.id}"></td>
             <td th:text="${producto.nombre}"></td>
             <td th:text="${producto.precio}"></td>
+            <td th:text="${producto.categoria.nombre}"></td>
+
             <td th:text="${producto.createAt}"></td>
 
             <td>
                 <a th:href="@{/form-v2/} + ${producto.id}">Editar</a>
+            </td>
+
+            <td>
+                <a th:href="@{/eliminar/} + ${producto.id}" onclick="return confirm('Estas seguro de que lo desea eliminar?')">Eliminar</a>
             </td>
         </tr>
         </tbody>
