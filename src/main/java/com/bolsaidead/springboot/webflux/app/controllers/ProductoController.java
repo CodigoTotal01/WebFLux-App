@@ -10,6 +10,8 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.SessionAttributes;
+import org.springframework.web.bind.support.SessionStatus;
 import org.thymeleaf.spring5.context.webflux.ReactiveDataDriverContextVariable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -17,6 +19,7 @@ import reactor.core.publisher.Mono;
 import java.time.Duration;
 
 // contendra metodos handler para el request
+@SessionAttributes("producto") // el producto se guarda en la sesion http
 @Controller
 public class ProductoController {
     @Autowired
@@ -38,24 +41,50 @@ public class ProductoController {
     public Mono<String> crear (Model model){
         model.addAttribute("producto", new Producto());
         model.addAttribute("titulo", "Formulario de producto");
+        model.addAttribute("boton", "Crear");
+
         return Mono.just("form");
     }
 
+    // Editar  - handler
     @GetMapping("/form/{id}")
     public Mono<String> editar(@PathVariable String id, Model model){
         Mono<Producto> productoMono = service.findById(id).doOnNext(producto -> {
             log.info("Producto: " + producto.getNombre());
-        });
+        }).defaultIfEmpty(new Producto());
         model.addAttribute("producto", productoMono);
+        model.addAttribute("boton", "Editar");
+
         model.addAttribute("titulo", "Editar  producto");
         return Mono.just("form");
     }
 
+    // Editar - con otro medodo reactivo - lindo la verdad
+    @GetMapping("/form-v2/{id}")
+    public Mono<String> editarV2(@PathVariable String id, Model model){
+        return service.findById(id).doOnNext(producto -> {
+            log.info("Producto: " + producto.getNombre());
+                    model.addAttribute("boton", "Editar");
+
+                    model.addAttribute("titulo", "Editar  producto");
+            model.addAttribute("producto", producto);
+        }).defaultIfEmpty(new Producto())
+                .flatMap(producto ->{
+                    if(producto.getId() == null){
+                    //! Debemos retornar un publisher - flux o mono
+                        return  Mono.error(new InterruptedException("No existe el producto"));
+                    }
+                    return Mono.just(producto);
+                })
+                .then(Mono.just("form"))
+                .onErrorResume(ex -> Mono.just("redirect:/listar?eror=no+existe+el+producto"));
+    }
 
 
     // Guardar, se enviara los datos que estan poblados en el objeto producto y se hidrata xd
     @PostMapping("/form")
-    public Mono<String> guardar(Producto producto){
+    public Mono<String> guardar(Producto producto, SessionStatus status){
+        status.setComplete(); //! indica que se halla completado la sesion
         return service.save(producto).doOnNext(productoGuardado-> {
             log.info("Producto guardado: " + productoGuardado.getNombre()+ " Id:" + productoGuardado.getId() );
         }).thenReturn("redirect:/listar"); // REtorna un mono string, guarda el valor de la respuesta
