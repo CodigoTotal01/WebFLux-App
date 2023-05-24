@@ -3,9 +3,18 @@ package com.bolsaidead.springboot.webflux.app.controllers;
 import com.bolsaidead.springboot.webflux.app.models.documents.Categoria;
 import com.bolsaidead.springboot.webflux.app.models.documents.Producto;
 import com.bolsaidead.springboot.webflux.app.models.services.ProductoService;
+import com.mongodb.client.model.ReturnDocument;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.web.ServerProperties;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -16,13 +25,24 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import javax.validation.Valid;
+import java.io.File;
+import java.net.MalformedURLException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.sql.ResultSet;
 import java.time.Duration;
 import java.util.Date;
+import java.util.UUID;
 
 // contendra metodos handler para el request
 @SessionAttributes("producto") // el producto se guarda en la sesion http
 @Controller
 public class ProductoController {
+
+    //! Leer variable de aplication properties
+    @Value("${config.uploads.path}")
+    private String path;
+
     @Autowired
     private ProductoService service;
 
@@ -33,6 +53,41 @@ public class ProductoController {
     public Flux<Categoria> categorias() {
         return service.findAllCategoria();
     }
+
+    @GetMapping("/ver/{id}")
+    public Mono<String> ver(Model model, @PathVariable String id) {
+        return service.findById(id).doOnNext(producto -> {
+                    model.addAttribute("producto", producto);
+                    model.addAttribute("titulo", "Detalle Producto");
+                    //default - flux
+                }).switchIfEmpty(Mono.just(new Producto()))
+                .flatMap(producto -> {
+                    if (producto.getId() == null) {
+                        //! Debemos retornar un publisher - flux o mono
+                        return Mono.error(new InterruptedException("No existe el producto"));
+                    }
+                    return Mono.just(producto);
+                }).then(Mono.just("ver"))
+                .onErrorResume(ex -> Mono.just("redirect:/listar?eror=no+existe+el+producto"));
+
+    }
+
+    //Expresion regular para colocar la extencion de la imagen
+    @GetMapping("/uploads/img/{nombreFoto:.+}")
+    public Mono<ResponseEntity<Resource>> verFoto(@PathVariable String nombreFoto) throws MalformedURLException {
+          Path ruta = Paths.get(path).resolve(nombreFoto).toAbsolutePath();
+
+        Resource imagen  = new UrlResource(ruta.toUri());
+
+
+        return Mono.just(ResponseEntity
+                        .ok()
+                        .header(HttpHeaders.CONTENT_DISPOSITION,
+                                "attachment; filename=\""+ imagen.getFilename() + "\"")
+                .body(imagen));
+
+    }
+
 
     @GetMapping("/listar")
     public Mono<String> listar(Model model) {
@@ -89,39 +144,44 @@ public class ProductoController {
                 .onErrorResume(ex -> Mono.just("redirect:/listar?eror=no+existe+el+producto"));
     }
 
-
-    // Guardar, se enviara los datos que estan poblados en el objeto producto y se hidrata xd
     @PostMapping("/form")
-    public Mono<String> guardar(@Valid Producto producto, BindingResult result, SessionStatus status, Model model) {
-        //contiene todos los mensajes de los resulados, tiene que ir pegado al objeto que se esa validando
+    public Mono<String> guardar(@Valid Producto producto, BindingResult result, Model model, @RequestPart FilePart file, SessionStatus status) {
+
         if (result.hasErrors()) {
+            model.addAttribute("titulo", "Errores en formulario producto");
             model.addAttribute("boton", "Guardar");
-            model.addAttribute("titulo", "Errores en el formulario producto");
             return Mono.just("form");
         } else {
-            status.setComplete(); //! indica que se halla completado la sesion
-
+            status.setComplete();
 
             Mono<Categoria> categoria = service.findCategoriaById(producto.getCategoria().getId());
 
+            return categoria.flatMap(c -> {
+                        if (producto.getCreateAt() == null) {
+                            producto.setCreateAt(new Date());
+                        }
 
-            //Transformar el flujo de producto para agregar la categoria
-            return categoria.flatMap(categoriaPlus -> {
-
-                if (producto.getCreateAt() == null) {
-                    producto.setCreateAt(new Date());
-                }
-
-                producto.setCategoria(categoriaPlus);
-                return service.save(producto);
-            }).doOnNext(productoGuardado -> {
-                log.info("Categoria asignada : " + productoGuardado.getCategoria().getNombre() + " Id:" + productoGuardado.getCategoria().getId());
-
-                log.info("Producto guardado: " + productoGuardado.getNombre() + " Id:" + productoGuardado.getId());
-            }).thenReturn("redirect:/listar?success=producto+guardo+con+exito"); // REtorna un mono string, guarda el valor de la respuesta
-
+                        if (!file.filename().isEmpty()) {
+                            producto.setFoto(UUID.randomUUID().toString() + "-" + file.filename()
+                                    .replace(" ", "")
+                                    .replace(":", "")
+                                    .replace("\\", "")
+                            );
+                        }
+                        producto.setCategoria(c);
+                        return service.save(producto);
+                    }).doOnNext(p -> {
+                        log.info("Categoria asignada: " + p.getCategoria().getNombre() + " Id Cat: " + p.getCategoria().getId());
+                        log.info("Producto guardado: " + p.getNombre() + " Id: " + p.getId());
+                    })
+                    .flatMap(p -> {
+                        if (!file.filename().isEmpty()) {
+                            return file.transferTo(new File(path + p.getFoto()));
+                        }
+                        return Mono.empty();
+                    })
+                    .thenReturn("redirect:/listar?success=producto+guardado+con+exito");
         }
-
     }
 
     // Para simular delay
